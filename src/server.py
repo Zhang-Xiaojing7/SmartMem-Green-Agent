@@ -20,20 +20,18 @@ def main():
     parser.add_argument("--card-url", type=str, help="URL to advertise in the agent card")
     args = parser.parse_args()
 
-    # Fill in your agent card
-    # See: https://a2a-protocol.org/latest/tutorials/python/3-agent-skills-and-card/
-    
+    # Green agent exposes an evaluation skill that runs adaptive smoke or full loops
     skill = AgentSkill(
-        id="",
-        name="",
-        description="",
-        tags=[],
-        examples=[]
+        id="smartmem-evaluator",
+        name="SmartMem Adaptive Evaluator",
+        description="Runs smoke or adaptive evaluations against a Purple agent over A2A and returns text+data+charts.",
+        tags=["evaluation", "smart-home", "a2a"],
+        examples=["Assess the connected purple agent on smart-home control"]
     )
 
     agent_card = AgentCard(
-        name="",
-        description="",
+        name="SmartMem Green Agent",
+        description="Adaptive evaluator that probes Purple agent capabilities and returns structured reports with charts.",
         url=args.card_url or f"http://{args.host}:{args.port}/",
         version='1.0.0',
         default_input_modes=['text'],
