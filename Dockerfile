@@ -1,9 +1,12 @@
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm
 
-RUN adduser agent
+# Create a non-interactive user and set up home directory
+RUN adduser --disabled-password --gecos "" --home /home/agent agent \
+    && chown -R agent:agent /home/agent
 USER agent
 WORKDIR /home/agent
 
+# Copy project files and install pinned dependencies. We keep --locked to ensure reproducible builds.
 COPY pyproject.toml uv.lock README.md ./
 COPY src src
 
