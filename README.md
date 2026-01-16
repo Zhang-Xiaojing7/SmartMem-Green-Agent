@@ -1,87 +1,24 @@
-# A2A Agent Template
+# agentbeats的主要交互逻辑
+agentbeats平台把scenario.toml里的参赛者等配置发给green， green开始评估流程，中间状态变化通过update_status更新，最终的评估结果通过add_artifacts提交，这会被更新在leaderboard上（默认是results文件夹里）
 
-A minimal template for building [A2A (Agent-to-Agent)](https://a2a-protocol.org/latest/) green agents compatible with the [AgentBeats](https://agentbeats.dev) platform.
+green评估过程中通过talk_to_agent和purple交互
 
-## Project Structure
+# green_agent_v2
+它继承自原来的green agent文件夹，去除了各种通用设施，保留了核心的试题生成和评估逻辑。
 
-```
-src/
-├─ server.py      # Server setup and agent card configuration
-├─ executor.py    # A2A request handling
-├─ agent.py       # Your agent implementation goes here
-└─ messenger.py   # A2A messaging utilities
-tests/
-└─ test_agent.py  # Agent tests
-Dockerfile        # Docker configuration
-pyproject.toml    # Python dependencies
-.github/
-└─ workflows/
-   └─ test-and-publish.yml # CI workflow
-```
+- 各种基础的数据结构定义被统一存放到了base.py中
 
-## Getting Started
+- 原先的AdaptiveGenerator(https://vscode.dev/github/ziiiiiiiiyan/SmartMem-Green-Agent/blob/main/archieved/green_agent/adaptive_loop.py#L508)改造成了instruction_generator.py中的AdaptiveGenerator，添加了生成初始题组的逻辑，强制生成了金字塔形的配比。抽离出了生成题目的prompt放在prompt.py中，负责生成题目的LLM被包装在LLMCaseGenerator中。
 
-1. **Create your repository** - Click "Use this template" to create your own repository from this template
+- 原先的adaptive_loop.py中的WeaknessAnalyzer、AdaptiveEvaluator(x 逻辑搬错了已删除，直接放agent.py/run里去)被放到现在evaluator.py中。考虑green agent发出instruction后未必purple agent能够一次性执行完成、同时单纯的对话指令实际上没有评估对象，我把evaluator调整为和analyser联动的版本，即evaluator接收每个turn的执行历史进行评估，调用analyser同步弱点信息。green可以调用evaluator.analyser.get_top_weaknesses(k)来获取前k个弱点丢给AdaptiveGenerator生成新的题组。
 
-2. **Implement your agent** - Add your agent logic to [`src/agent.py`](src/agent.py)
+- adaptive_loop.py中的主循环AdaptiveTestLoop逻辑被放在了src/agent.py中
 
-3. **Configure your agent card** - Fill in your agent's metadata (name, skills, description) in [`src/server.py`](src/server.py)
+- **还没有完成的**
 
-4. **Write your tests** - Add custom tests for your agent in [`tests/test_agent.py`](tests/test_agent.py)
+   1. 可视化和报告生成这部分还没搬运
 
-For a concrete example of implementing a green agent using this template, see this [draft PR](https://github.com/RDI-Foundation/green-agent-template/pull/3).
+   2. prompt里直接把设备信息写死，但是现在还保留了占位符
 
-## Running Locally
-
-```bash
-# Install dependencies
-uv sync
-
-# Run the server
-uv run src/server.py
-```
-
-## Running with Docker
-
-```bash
-# Build the image
-docker build -t my-agent .
-
-# Run the container
-docker run -p 9009:9009 my-agent
-```
-
-## Testing
-
-Run A2A conformance tests against your agent.
-
-```bash
-# Install test dependencies
-uv sync --extra test
-
-# Start your agent (uv or docker; see above)
-
-# Run tests against your running agent URL
-uv run pytest --agent-url http://localhost:9009
-```
-
-## Publishing
-
-The repository includes a GitHub Actions workflow that automatically builds, tests, and publishes a Docker image of your agent to GitHub Container Registry.
-
-If your agent needs API keys or other secrets, add them in Settings → Secrets and variables → Actions → Repository secrets. They'll be available as environment variables during CI tests.
-
-- **Push to `main`** → publishes `latest` tag:
-```
-ghcr.io/<your-username>/<your-repo-name>:latest
-```
-
-- **Create a git tag** (e.g. `git tag v1.0.0 && git push origin v1.0.0`) → publishes version tags:
-```
-ghcr.io/<your-username>/<your-repo-name>:1.0.0
-ghcr.io/<your-username>/<your-repo-name>:1
-```
-
-Once the workflow completes, find your Docker image in the Packages section (right sidebar of your repository). Configure the package visibility in package settings.
-
-> **Note:** Organization repositories may need package write permissions enabled manually (Settings → Actions → General). Version tags must follow [semantic versioning](https://semver.org/) (e.g., `v1.0.0`).
+## MEMO
+一个test round包含n个test case，test case的数量=当前关注的前k个弱点的数量\times希望针对每个弱点生成的test case的数量
