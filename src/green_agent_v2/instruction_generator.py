@@ -176,36 +176,31 @@ class AdaptiveGenerator:
         
         return generated
 
-    def generate_initial_pyramid(
-        self, 
-        dimensions: List[str], 
-        base_count: int = 3
-    ) -> List[TestCase]:
+    def generate_initial_pyramid(self) -> List[TestCase]:
         """
-        Generates an initial set of test cases using a pyramid distribution strategy:
-        More easy cases, fewer hard cases.
+        Generates a fixed set of test cases using a pyramid distribution.
         
-        Structure per dimension:
-        - Easy: base_count * 3
-        - Medium: base_count * 2
-        - Difficult: base_count * 1
+        Hardcoded Strategy (6 cases per dimension):
+        - Dimensions: ["precision", "ambiguous", "conflict", "memory", "noise"]
+        - Distribution: 3 Easy, 2 Medium, 1 Difficult
         """
         generated = []
         
-        # Pyramid ratios
-        difficulty_distribution = {
+        dimensions = ["precision", "ambiguous", "conflict", "memory", "noise"]
+        
+        difficulty_counts = {
             'easy': 3,
             'medium': 2,
             'difficult': 1
         }
         
-        print(f"  ▲ Starting Pyramid Generation for {len(dimensions)} dimensions...")
+        print(f"  ▲ Starting Fixed Pyramid Generation (Target: {len(dimensions) * 6} cases)...")
 
         for dimension in dimensions:
-            for difficulty, multiplier in difficulty_distribution.items():
-                count = base_count * multiplier
-                
-                print(f"    - Generating {count} {difficulty} cases for {dimension}")
+            print(f"    > Processing dimension: {dimension}")
+            
+            for difficulty, count in difficulty_counts.items():
+                # print(f"      - Generating {count} {difficulty} cases") 
                 
                 for _ in range(count):
                     case = self.case_generator.generate_single_case(

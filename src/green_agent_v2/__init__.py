@@ -1,7 +1,10 @@
-from .evaluator import AdaptiveEvaluator
+from .evaluator import TurnEvaluator, WeaknessAnalyzer
 from .instruction_generator import AdaptiveGenerator
+from .base import TestResult
 
 __all__ = [
-    "AdaptiveEvaluator",
-    "AdaptiveGenerator"
+    "TurnEvaluator",
+    "WeaknessAnalyzer"
+    "AdaptiveGenerator",
+    "TestResult"
 ]
