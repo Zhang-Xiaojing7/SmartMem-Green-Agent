@@ -7,7 +7,7 @@ from openai import OpenAI, APIConnectionError, APIError, RateLimitError
 from json_repair import repair_json
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from .prompts import SYSTEM_PROMPT, USER_PROMPT
+from .prompts import SYSTEM_PROMPT, USER_PROMPT, difficulty_specs, dimension_specs
 from .base import TestCase
 
 load_dotenv()
@@ -80,7 +80,9 @@ class LLMCaseGenerator:
             # Construct the prompt
             formatted_user_prompt = USER_PROMPT.format(
                 difficulty=difficulty,
+                difficulty_specs=difficulty_specs.get(difficulty, ""),
                 dimension=dimension,
+                dimension_specs=dimension_specs.get(dimension, ""),
                 scenario_number=scenario_number
             )
 
