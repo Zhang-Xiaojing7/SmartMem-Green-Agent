@@ -125,7 +125,16 @@ class AdaptiveGenerator:
     """
     
     def __init__(self):
-        self.case_generator = LLMCaseGenerator()
+        # Lazy initialization - don't create LLMCaseGenerator until needed
+        # This allows smoke tests to pass without API keys
+        self._case_generator = None
+    
+    @property
+    def case_generator(self) -> LLMCaseGenerator:
+        """Lazily initialize the LLM case generator when first accessed."""
+        if self._case_generator is None:
+            self._case_generator = LLMCaseGenerator()
+        return self._case_generator
     
     def generate_targeted(
         self, 
