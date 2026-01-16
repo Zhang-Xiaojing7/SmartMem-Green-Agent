@@ -54,18 +54,23 @@ class Agent:
         A value between 0.0 and 1.0. This defines the stopping criterion based on stability; 
         testing stops early if the change in pass rate between two consecutive rounds 
         is less than this threshold.
+        
+    - use_static (bool, optional):
+        If True, use predefined static test cases instead of LLM-generated ones.
+        Useful for testing/debugging without API rate limits. Default: False.
     """
     required_roles: list[str] = ['purple']
     required_config_keys: list[str] = ['max_test_rounds', 'weakness_num', 'targeted_per_weakness', 'convergence_threshold']
 
-    def __init__(self):
+    def __init__(self, use_static: bool = False):
         self.messenger = Messenger()
-        self.test_case_generator = AdaptiveGenerator()
+        self.test_case_generator = AdaptiveGenerator(use_static=use_static)
         self.env = SmartHomeEnv()
         self.analyser = WeaknessAnalyzer()
         self.report_generator = ReportGenerator()
         self.round_history = []
         self.all_results: List[TestResult] = []
+        self._use_static = use_static
 
     def validate_request(self, request: EvalRequest) -> tuple[bool, str]:
         missing_roles = set(self.required_roles) - set(request.participants.keys())
@@ -107,7 +112,7 @@ class Agent:
             ))
             return
 
-        purple_addr = request.participants['purple']
+        purple_addr = str(request.participants['purple'])
         max_rounds = request.config['max_test_rounds']
         weakness_num = request.config['weakness_num']
         target_count = request.config['targeted_per_weakness']
@@ -177,7 +182,7 @@ class Agent:
                     # Interaction Loop
                     current_input = instruction
                     while True:
-                        agent_reply = self.messenger.talk_to_agent(
+                        agent_reply = await self.messenger.talk_to_agent(
                             message=current_input, 
                             url=purple_addr, 
                             new_conversation=is_new_conversation
