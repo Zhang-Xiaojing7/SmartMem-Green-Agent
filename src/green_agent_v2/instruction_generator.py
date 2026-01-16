@@ -1,10 +1,10 @@
 import os
 import json
 import logging
+import json_repair
 from typing import List, Tuple, Dict, Optional
 from dotenv import load_dotenv
 from openai import OpenAI, APIConnectionError, APIError, RateLimitError
-from json_repair import repair_json
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from .prompts import SYSTEM_PROMPT, USER_PROMPT, difficulty_specs, dimension_specs
@@ -46,7 +46,7 @@ class LLMCaseGenerator:
 
         gen_args_str = os.getenv("MODEL_GEN_ARGS", '{}')
         try:
-            self.model_gen_args = repair_json(gen_args_str, return_objects=True)
+            self.model_gen_args = json_repair.loads(gen_args_str)
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse MODEL_GEN_ARGS from .env: {e}. Using empty dict.")
             self.model_gen_args = {}
@@ -98,9 +98,9 @@ class LLMCaseGenerator:
                 logger.warning("Received empty content from LLM.")
                 return None
                 
-            # Parse the JSON response using repair_json
+            # Parse the JSON response using json_repair
             try:
-                case_data = repair_json(content, return_objects=True)
+                case_data = json_repair.loads(content)
             except Exception as e:
                 logger.error(f"JSON parsing failed. Content snippet: {content[:100]}... Error: {e}")
                 return None

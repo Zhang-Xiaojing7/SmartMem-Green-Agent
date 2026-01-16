@@ -1,5 +1,4 @@
 import json
-# from json_repair import repair_json
 import json_repair
 from typing import Any, List, Dict
 from pydantic import BaseModel, HttpUrl, ValidationError
@@ -190,7 +189,7 @@ class Agent:
                         is_new_conversation = False 
 
                         try:
-                            parsed_actions = json_repair(agent_reply, return_objects=True)
+                            parsed_actions = json_repair.loads(agent_reply)
                         except Exception:
                             parsed_actions = None
 
