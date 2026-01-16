@@ -20,17 +20,29 @@ class LLMCaseGenerator:
     Replaces the original 'GreenAgent'.
     """
     def __init__(self):
-        # 1. Load API Credentials
-        api_key = os.getenv("OPENAI_API_KEY")
-        base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        # 1. Load API Credentials - Support multiple providers
+        # Priority: GOOGLE_API_KEY (Gemini) > OPENAI_API_KEY > error
+        google_api_key = os.getenv("GOOGLE_API_KEY")
+        openai_api_key = os.getenv("OPENAI_API_KEY")
         
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found in environment variables.")
+        if google_api_key:
+            # Use Gemini via OpenAI-compatible endpoint
+            api_key = google_api_key
+            base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+            default_model = "gemini-2.0-flash"
+            logger.info("Using Google Gemini API")
+        elif openai_api_key:
+            api_key = openai_api_key
+            base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+            default_model = "gpt-4o"
+            logger.info("Using OpenAI API")
+        else:
+            raise ValueError("No API key found. Set GOOGLE_API_KEY or OPENAI_API_KEY in environment.")
 
         self.client = OpenAI(api_key=api_key, base_url=base_url)
 
         # 2. Load Model Configurations from .env
-        self.model_name = os.getenv("MODEL_NAME", "gpt-4o") # Default fallback
+        self.model_name = os.getenv("MODEL_NAME", default_model)
 
         gen_args_str = os.getenv("MODEL_GEN_ARGS", '{}')
         try:

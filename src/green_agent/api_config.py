@@ -120,6 +120,19 @@ class APIConfigFactory:
         )
     
     @staticmethod
+    def gemini(
+        model: str = "gemini-2.0-flash",
+        api_key: Optional[str] = None
+    ) -> APIConfig:
+        """Google Gemini API 配置 (使用 OpenAI 兼容端点)"""
+        return APIConfig(
+            provider="gemini",
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            api_key=api_key or os.getenv("GOOGLE_API_KEY", ""),
+            model=model
+        )
+    
+    @staticmethod
     def openrouter(
         model: str = "anthropic/claude-3.5-sonnet",
         api_key: Optional[str] = None
@@ -181,6 +194,10 @@ PRESET_CONFIGS = {
     # DeepSeek
     "deepseek-chat": APIConfigFactory.deepseek("deepseek-chat"),
     "deepseek-coder": APIConfigFactory.deepseek("deepseek-coder"),
+    
+    # Google Gemini
+    "gemini-2.0-flash": APIConfigFactory.gemini("gemini-2.0-flash"),
+    "gemini-1.5-pro": APIConfigFactory.gemini("gemini-1.5-pro"),
 }
 
 

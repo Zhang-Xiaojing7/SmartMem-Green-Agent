@@ -326,6 +326,18 @@ class GreenAgent:
         )
     
     @classmethod
+    def from_gemini(cls, model: str = "gemini-2.0-flash", api_key: Optional[str] = None, **kwargs):
+        """从 Google Gemini API 创建 (使用 OpenAI 兼容端点)"""
+        import os
+        return cls(
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            api_key=api_key or os.getenv("GOOGLE_API_KEY", ""),
+            model=model,
+            provider="gemini",
+            **kwargs
+        )
+    
+    @classmethod
     def from_openrouter(cls, model: str = "anthropic/claude-3.5-sonnet", api_key: Optional[str] = None, **kwargs):
         """从 OpenRouter 创建 (多模型网关)"""
         import os
