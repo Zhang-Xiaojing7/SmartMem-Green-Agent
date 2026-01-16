@@ -291,4 +291,3 @@ class Agent:
         await updater.complete(new_agent_text_message(
             f"Assessment completed. Pass rate: {summary_data.get('pass_rate', 0)*100:.1f}%"
         ))
-        )
