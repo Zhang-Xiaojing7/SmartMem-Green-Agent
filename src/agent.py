@@ -1,12 +1,14 @@
-from typing import Any
+import json
+from json_repair import repair_json
+from typing import Any, List, Dict
 from pydantic import BaseModel, HttpUrl, ValidationError
 from a2a.server.tasks import TaskUpdater
-from a2a.types import Message, TaskState, Part, TextPart, DataPart
+from a2a.types import Message, TaskState, Part, TextPart, DataPart, FilePart
 from a2a.utils import get_message_text, new_agent_text_message
 
 from messenger import Messenger
-from green_agent_v2 import AdaptiveGenerator, AdaptiveEvaluator
-
+from green_agent_v2 import AdaptiveGenerator, WeaknessAnalyzer, TurnEvaluator, TestResult
+from app import SmartHomeEnv
 
 class EvalRequest(BaseModel):
     """Request format sent by the AgentBeats platform to green agents."""
@@ -17,15 +19,39 @@ class EvalRequest(BaseModel):
 class Agent:
     """
     Green Agent Testing Pipeline.
-    In this pipeline, the Green Agent acts as the examiner. It fetches questions, sends them to the examinee (Purple Agent), engages in necessary interactions, and finally collects and forwards the examinee's answers to the grader.
 
-    Upon receiving new question sets generated based on the examinee's identified weaknesses from the grading process, the Green Agent continues to administer questions until the maximum number of test rounds is reached. Finally, the Green Agent returns the examinee's evaluation results.
+    In this pipeline, the Green Agent acts as the examiner. It fetches questions, 
+    administers them to the examinee (Purple Agent), manages the necessary multi-turn 
+    interactions, and finally collects and forwards the responses to the evaluator.
 
-    The following configurations are required in scenario.toml:
+    The pipeline operates adaptively:
+    1. The initial round uses a default 'pyramid' distribution strategy to sample questions.
+    2. Subsequent rounds generate new question sets targeting the specific weaknesses 
+       identified in the previous round's evaluation.
+    3. The process continues until the maximum number of test rounds is reached or 
+       the results converge. Finally, the Green Agent returns the comprehensive evaluation results.
 
-    - max_test_rounds: Specifies the maximum number of test rounds. Each test round consists of one instruction issued by the Green Agent.
-    - targeted_per_weakness: The number of questions generated for each identified weakness category after evaluation. For example, if set to 3 and the examinee reveals 2 weaknesses, 6 new questions will be generated.
-    - convergence_threshold: The convergence threshold (testing stops when the change in pass rate between two consecutive rounds is less than this value).
+    Required configurations in `scenario.toml`:
+
+    - max_test_rounds (int): 
+        Specifies the maximum number of testing iterations. 一个test round包含n个test case，test case的数量 = weakness_num * targeted_per_weakness
+        Round 1 uses the default pyramid distribution. For the remaining (max_test_rounds - 1) 
+        rounds, questions are dynamically generated based on the top `weakness_num` 
+        weaknesses and `targeted_per_weakness`.
+
+    - weakness_num (int): 
+        The number of top weaknesses (k) to prioritize when generating adaptive question 
+        sets for subsequent rounds.
+
+    - targeted_per_weakness (int): 
+        The number of new test cases to generate for each identified weakness category. 
+        For example, if `weakness_num` is 2 and this value is 3, a total of 6 new 
+        questions will be generated for the next round.
+
+    - convergence_threshold (float): 
+        A value between 0.0 and 1.0. This defines the stopping criterion based on stability; 
+        testing stops early if the change in pass rate between two consecutive rounds 
+        is less than this threshold.
     """
     required_roles: list[str] = ['purple']
     required_config_keys: list[str] = ['max_test_rounds', 'targeted_per_weakness', 'convergence_threshold']
@@ -33,7 +59,10 @@ class Agent:
     def __init__(self):
         self.messenger = Messenger()
         self.test_case_generator = AdaptiveGenerator()
-        self.evaluator = AdaptiveEvaluator()
+        self.env = SmartHomeEnv()
+        self.analyser = WeaknessAnalyzer()
+        self.round_history = []
+        self.all_results: List[TestResult] = []
 
     def validate_request(self, request: EvalRequest) -> tuple[bool, str]:
         missing_roles = set(self.required_roles) - set(request.participants.keys())
@@ -47,7 +76,7 @@ class Agent:
         # Add additional request validation here
 
         return True, "ok"
-
+    
     async def run(self, message: Message, updater: TaskUpdater) -> None:
         """
         Args:
@@ -70,20 +99,149 @@ class Agent:
 
         purple_addr = request.participants['purple']
         max_rounds = request.config['max_test_rounds']
+        weakness_num = request.config['weakness_num']
         target_count = request.config['targeted_per_weakness']
         threshold = request.config['convergence_threshold']
         
-        #TODO: adaptive test loop
 
-        await updater.update_status(
-            TaskState.working, new_agent_text_message("Thinking...")
-        )
+        # 题目的格式：
+        # {{
+        # "scenario_id": "scenario_A1_B1_C0_N0",
+        # "difficulty": "easy|medium|difficult",
+        # "dimension": "precision|ambiguous|conflict|memory|noise",
+        # "description": "Brief English description",
+        # "initial_state": {{"device_key": "valid_value"}},
+        # "turns": [
+        #     {{
+        #     "turn_id": 1,
+        #     "gm_instruction": "User instruction",
+        #     "expected_agent_action": [
+        #         {{"action": "update", "key": "device_key", "value": "valid_value"}}
+        #     ],
+        #     "expected_final_state": {{"device_key": "valid_value"}}
+        #     }}
+        # ]
+        # }}
+
+        # cold start: 
+        new_test_cases = self.test_case_generator.generate_initial_pyramid() # Here we generate 6 test cases for 5 evaluation dimensions in a pyramid shape (easy: medium: hard = 3:2:1)
+        all_test_cases = [new_test_cases, ]
+        
+        last_round_pass_rate = 0
+        for round_cnt in range(max_rounds):
+            round_num = round_cnt + 1
+            focus = "General Pyramid" if round_cnt == 0 else "Weakness Targeted"
+            
+            await updater.update_status(
+                TaskState.working, 
+                new_agent_text_message(f"Round {round_num}/{max_rounds}: Testing ({focus})...")
+            )
+            
+            current_round_results: List[TestResult] = []
+            for test_case in new_test_cases:
+                self.env.reset_turn_history()
+                self.env.reset(initial_state=test_case['initial_state'])
+                is_new_conversation = True
+                
+                turn_res = {}
+                test_case_total_score, test_case_max_score = 0.0, 0.0
+                turn_details = []
+                test_case_all_errors = []
+                # result ds:
+                # {
+                #     "score": score,
+                #     "details": {
+                #         "sequence_match": seq_match,
+                #         "state_match": state_match,
+                #         "errors": errors
+                #     },
+                #     "message": msg
+                # }
+                for turn in test_case['turns']:
+                    turn_id = turn.get('turn_id', 0)
+                    instruction = turn.get('gm_instruction', '')
+                    expected_actions = turn.get('expected_agent_action', [])
+                    expected_state = turn.get('expected_final_state', {})
+                    
+                    evaluator = TurnEvaluator(expected_actions=expected_actions, expected_final_state=expected_state)
+                    # Interaction Loop
+                    current_input = instruction
+                    while True:
+                        agent_reply = self.messenger.talk_to_agent(
+                            message=current_input, 
+                            url=purple_addr, 
+                            new_conversation=is_new_conversation
+                        )
+                        is_new_conversation = False 
+
+                        try:
+                            parsed_actions = repair_json.loads(agent_reply)
+                        except Exception:
+                            parsed_actions = None
+
+                        # 1. Tool Use
+                        if isinstance(parsed_actions, list) and len(parsed_actions) > 0:
+                            env_res: List[Dict] = []
+                            for action in parsed_actions:
+                                _res = self.env.update_state(action)
+                                env_res.append(_res)
+                            current_input = json.dumps(env_res)
+                        
+                        # 2. Turn Complete
+                        else:
+                            # evaluate turn
+                            turn_res = evaluator.evaluate(actual_actions=self.env.get_action_history(), actual_final_state=self.env.get_state())
+                            break
+                    
+                    turn_score = turn_res['score']
+                    test_case_total_score += turn_score
+                    test_case_max_score += 1 # 实际上应该就是turn的数量？
+                    turn_details.append(
+                        {
+                            'turn_id': turn_id,
+                            'instruction': instruction,
+                            'score': turn_score,
+                            'max_score': 1.0,
+                            'passed': turn_score == 1.0,
+                            'errors': turn_res.get('details', {}).get('errors', [])
+                        }
+                    )
+                    if turn_res.get('details', {}).get('errors'):
+                        test_case_all_errors.extend(result['details']['errors'])
+                    
+                test_case_final_score = test_case_total_score / max(1, test_case_max_score)
+                ifthistc_passed = test_case_final_score >= 1.0
+                current_round_results.append(
+                    TestResult(
+                        test_case=test_case,
+                        score=test_case_total_score,
+                        max_score=test_case_max_score,
+                        passed=ifthistc_passed,
+                        errors=test_case_all_errors,
+                        turn_details=turn_details
+                    )
+                )
+
+            self.all_results += current_round_results
+            current_round_pass_rate = sum(1 for r in current_round_results if r.passed) / max(1, len(current_round_results))
+            
+            if abs(current_round_pass_rate-last_round_pass_rate) < threshold:
+                await updater.complete(new_agent_text_message("Convergenced. Test ended."))
+            else:
+                top_weaknesses = self.analyzer.get_top_weaknesses(weakness_num)
+                new_test_cases = self.test_case_generator.generate_targeted(top_weaknesses, target_count) #TODO: 其实这里可以设置difficulty_boost，直接默认True了，后面可以调整
+                all_test_cases.append(new_test_cases)
+            
+        #TODO: 生成最终评估后得到的agent画像以及可视化结果等, 也可以把all_test_cases也打过去
+        temp_judgement=...
+        visual_res=...
         await updater.add_artifact(
             parts=[
-                Part(root=TextPart(text="The agent performed well.")),
+                Part(root=TextPart(text=temp_judgement)),
                 Part(root=DataPart(data={
                     # structured assessment results
-                }))
+                })),
+                Part(root=FilePart(file=visual_res))
             ],
             name="Result",
         )
