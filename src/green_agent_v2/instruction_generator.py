@@ -330,5 +330,102 @@ class AdaptiveGenerator:
                     )
                     if case:
                         generated.append(case)
-                        
+
         return generated
+
+
+def test_generator():
+    """
+    Test function to verify the LLM-based generator works correctly.
+
+    This function tests:
+    1. LLMCaseGenerator initialization (API key and model config)
+    2. Single test case generation via LLM API
+    3. AdaptiveGenerator pyramid generation
+    4. AdaptiveGenerator targeted generation
+
+    Requires: GOOGLE_API_KEY or OPENAI_API_KEY in environment/.env
+    """
+    # Configure logging to see INFO level messages
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+
+    print("=" * 60)
+    print("Testing LLM Instruction Generator")
+    print("=" * 60)
+
+    # Test 1: Initialize generator and verify API configuration
+    print("\n[TEST 1] Initializing LLMCaseGenerator...")
+    try:
+        generator = LLMCaseGenerator()
+        print(f"    ✓ Generator initialized successfully")
+        print(f"    Base URL: {generator.client.base_url}")
+        api_key = generator.client.api_key
+        masked_key = api_key[:8] + "..." + api_key[-4:] if api_key and len(api_key) > 12 else "***"
+        print(f"    API Key: {masked_key}")
+        print(f"    Model: {generator.model_name}")
+        print(f"    Generation args: {generator.model_gen_args}")
+    except ValueError as e:
+        print(f"    ✗ Initialization failed: {e}")
+        print("    Please set GOOGLE_API_KEY or OPENAI_API_KEY in .env file")
+        return
+    except Exception as e:
+        print(f"    ✗ Unexpected error: {e}")
+        return
+
+    # Test 2: Generate a single test case
+    print("\n[TEST 2] Generating single test case...")
+    print("    Calling LLM API (difficulty=easy, dimension=precision)...")
+    try:
+        case = generator.generate_single_case(
+            difficulty='easy',
+            dimension='precision',
+            scenario_number=1
+        )
+        if case:
+            print(f"    ✓ Successfully generated test case!")
+            print(f"      Scenario ID: {case.get('scenario_id', 'N/A')}")
+            print(f"      Difficulty: {case.get('difficulty', 'N/A')}")
+            print(f"      Dimension: {case.get('dimension', 'N/A')}")
+            print(f"      Description: {case.get('description', 'N/A')[:80]}...")
+            print(f"      Turns: {len(case.get('turns', []))}")
+            print("\n    --- Generated Content (JSON) ---")
+            print(json.dumps(case, indent=2, ensure_ascii=False))
+            print("    ------------------------------")
+        else:
+            print("    ✗ Failed to generate test case (returned None)")
+    except Exception as e:
+        print(f"    ✗ Error during generation: {e}")
+        return
+
+    # Test 3: Generate multiple cases with AdaptiveGenerator
+    print("\n[TEST 3] Testing AdaptiveGenerator (pyramid mode)...")
+    try:
+        adaptive_gen = AdaptiveGenerator(use_static=False)
+        print("    Generating initial pyramid test cases...")
+        # Generate a small subset for testing (1 dimension instead of all 5)
+        print("    Note: This will take some time as it calls LLM multiple times...")
+
+        # Test targeted generation instead (fewer API calls)
+        print("\n[TEST 4] Testing targeted generation...")
+        weaknesses = [('dimension', 'precision', 0.8)]
+        targeted_cases = adaptive_gen.generate_targeted(
+            weaknesses=weaknesses,
+            count_per_weakness=2
+        )
+        print(f"    ✓ Generated {len(targeted_cases)} targeted cases")
+        if targeted_cases:
+            print(f"      First case ID: {targeted_cases[0].get('scenario_id', 'N/A')}")
+
+    except Exception as e:
+        print(f"    ✗ Error: {e}")
+
+    print("\n" + "=" * 60)
+    print("Test Complete!")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    test_generator()
