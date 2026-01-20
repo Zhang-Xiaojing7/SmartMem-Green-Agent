@@ -82,27 +82,58 @@ class SmartHomeEnv:
             return {"status": "success", "state": self.state.copy()}
 
     def update_state(self, key, value):
-        """更新状态，包含简单的校验逻辑"""
-        if key not in self.state:
-             return {"status": "error", "message": f"Device '{key}' does not exist"}
+        """根据输入操作环境并返回结果"""
+        
+        metadata = {
+            "operation_object": key
+        }
 
-        # 校验 Enum 类型
+        # 1. 校验 Key 是否存在
+        if key not in self.state:
+            return {
+                "status": "error",
+                "message": f"Device '{key}' does not exist",
+                "metadata": metadata
+            }
+
+        # 2. 校验 Enum 类型
         if key in self.constraints:
             if value not in self.constraints[key]:
-                 return {"status": "error", "message": f"Invalid value '{value}' for {key}. Allowed: {self.constraints[key]}"}
+                return {
+                    "status": "error",
+                    "message": f"Invalid value '{value}' for {key}. Allowed: {self.constraints[key]}",
+                    "metadata": metadata
+                }
         
-        # 校验 Int 类型
+        # 3. 校验 Int 类型 (温度、音量等)
         if key in ["ac_temperature", "music_volume"]:
             if not isinstance(value, int):
-                 return {"status": "error", "message": "Value must be an integer"}
+                return {
+                    "status": "error",
+                    "message": "Value must be an integer",
+                    "metadata": metadata
+                }
             if key == "ac_temperature" and not (16 <= value <= 30):
-                 return {"status": "error", "message": "Temperature must be between 16 and 30"}
+                return {
+                    "status": "error",
+                    "message": "Temperature must be between 16 and 30",
+                    "metadata": metadata
+                }
             if key == "music_volume" and not (0 <= value <= 10):
-                 return {"status": "error", "message": "Volume must be between 0 and 10"}
+                return {
+                    "status": "error",
+                    "message": "Volume must be between 0 and 10",
+                    "metadata": metadata
+                }
 
-        # 执行更新
+        # 4. 执行更新 (成功情况)
         self.state[key] = value
-        return {"status": "success", "current_value": value, "message": f"{key} updated to {value}"}
+        return {
+            "status": "success",
+            "current_value": value,
+            "message": f"{key} updated to {value}",
+            "metadata": metadata
+        }
     
     def record_action(self, action_dict: dict):
         """
